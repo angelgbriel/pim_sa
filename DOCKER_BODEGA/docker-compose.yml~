@@ -1,0 +1,8 @@
+version: "2"
+services:
+  bodega: 
+    build: ./bodega
+    volumes:
+      - ./bodega/app:/home/app
+    ports:
+      - "4000:4000"

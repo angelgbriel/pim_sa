@@ -1,0 +1,216 @@
+var express = require('express');
+var bodyParser = require('body-parser');
+var mysql      = require('mysql');
+const config = require('config');
+var request = require('request');
+var initConf =require('./conf');
+var app = express();
+
+app.use(bodyParser.json()); // support json encoded bodies
+app.use(bodyParser.urlencoded({ extended: true })); // support encoded bodies
+
+var periodo = 0;
+
+// environment variables
+const PORT = process.env.PORT || 8090;
+const HOST = process.env.HOST || '0.0.0.0';
+
+// mysql credentials
+const connection = mysql.createConnection({
+	host: process.env.MYSQL_HOST || 'localhost',
+	user: process.env.MYSQL_USER || 'root',
+	database: process.env.MYSQL_DATABASE || 'bodega'
+});
+
+connection.connect((err) => {
+	if (err) {
+		console.error('error connecting mysql: ', err);
+	} else {
+		console.log('mysql connection successful');
+		app.listen(PORT, HOST, (err) => {
+			if (err) {
+				console.error('Error starting  server', err);
+			} else {
+				console.log('server listening at port ' + PORT);
+			}
+		});
+	}
+});
+
+app.get('/', (req, res)=>{
+	connection.query('SELECT * FROM `product` WHERE 1', function(error, results, fields){
+		if (error) throw error;
+		console.log(results.length);
+		console.log('The solution is: ', results[0]);
+	});
+	res.send('BODEGA');
+});
+
+app.get('/Bodega/obtenerInventario', (req, res)=>{
+	var solicitud = req.body; 
+	let arregloInventario = [];
+	let ultimo = solicitud.arreglo.length;
+	var tienda = solicitud.origen.split('.');
+	console.log("impriento separacion " + tienda[0]);
+
+	for (let i=0; i < solicitud.arreglo.length; i++) {
+		var query = "SELECT sku,inventario FROM product " +
+		" WHERE sku =  \'"+solicitud.arreglo[i]+"\';";
+		connection.query(query, function (err, result) {
+			if (err) throw err;
+			result.forEach(function (producto) {
+				var pro = new Object();
+				pro.sku = producto.sku;
+				pro.inventario = producto.inventario
+				arregloInventario.push({
+					"sku":pro.sku,
+					"inventario":pro.inventario
+				})
+				if(i==ultimo-1){
+					var aux = JSON.stringify(arregloInventario);
+					aux = '{"products":'+aux+'}';
+					generarReporte(3,tienda[0],"");
+					res.send(aux)
+				} 
+			})
+		});
+    }
+});
+
+app.post('/Bodega/realizarDespacho', (req, res)=>{
+	//console.log(req.body); 
+	let producto = req.body;
+    var query = "SELECT sku,inventario FROM product WHERE sku =  \'"+producto.sku+"\';";
+    connection.query(query, function (err, result) {
+        if (err) throw err;
+        if(result[0].inventario >= producto.cantidad) {
+			var tot = result[0].inventario - producto.cantidad;
+			console.log("quedan: " + tot);
+            var query = "UPDATE product"  +
+                " SET inventario = "+ tot +
+				" WHERE sku =  \'" + producto.sku + "\';";
+            connection.query(query, function (err, result) {
+				//Si se despacho
+				generarReporte(4,"",producto.pais);
+				res.send({resultado: true});
+
+			});
+        }
+        else{
+			//Si no se despacho 
+			generarReporte(5,"","");
+			res.send({resultado: false});
+		}
+    });
+});
+
+app.get('/Bodega/init', (req, res)=> {
+
+	var query = " DELETE FROM product";
+    connection.query(query, function (err, result) {
+        request.get('http://35.237.5.169:8080/PIM/obtenerCatalogo', function (error, response, body) {
+		   
+			var catalogoPIM = JSON.parse(body);
+			var cantidad = catalogoPIM.productos.length;
+			var i = 0; 
+            catalogoPIM.productos.forEach(function (item) {
+				var cantidadInventario = Math.floor(Math.random() * 800);
+				console.log(cantidadInventario)
+                if (cantidadInventario > 100 && cantidadInventario < 260) {
+                    cantidadInventario = 0;
+                }
+				var query2 = "INSERT INTO product (sku,inventario)" +
+					"VALUES('" + item.sku + "'," + cantidadInventario + ");";
+				connection.query(query2, function (err, result) {
+					i++;
+					// tipo 1 = tiene inventario
+					var tipo = 1;
+					if(cantidadInventario==0)
+						tipo=2;
+					// tipo 2 = no tiene inventario
+					generarReporte(tipo,"","");
+					if(i==cantidad) res.send(200);
+				});
+			});
+		});
+    });
+});
+
+/* 
+	reporte tipo 1 = producto generado con inventario.
+	reporte tipo 2 = producto generado sin inventario. 
+	reporte tipo 3 = productos listados en inventario.
+	reporte tipo 4 = producto despachado. 
+	reporte tipo 5 = producto no despachado por falta de inventario. 
+
+*/
+function generarReporte(tipo, tienda, ubicacion){
+	var query = "INSERT INTO reporteBodega (tipo,periodo,tienda,ubicacion)" +
+						"VALUES("+ tipo +","+periodo+",'"+tienda+"','"+ubicacion+"');";
+	connection.query(query, function (err, result) {
+		console.log("reporte actualizado");
+	});
+}
+
+app.get('/Bodega/reporte/periodo',(req,res)=>{
+    var sql = "SELECT COUNT(periodo) AS total ,tipo, periodo FROM reporteBodega group by tipo,periodo order by tipo;";
+	var report = '<!DOCTYPE html>'+
+	'<html>' +
+	'<head>' +
+		'<meta charset="utf-8">' +
+		'<meta http-equiv="X-UA-Compatible" content="IE=edge">' +
+		'<title>Reporte Bodega</title>' +
+		'<style>' +
+			'table, th, td {'+
+			'border: 1px solid black;'+
+			'border-collapse: collapse;'+
+			'}'+
+		'</style>'+
+	'</head>' +
+	'<body>' +
+	'<h1> Reporte de productos simulados </h1>' + 
+	'<h3> Total de productos creados por perido: 25 </h3>' + 
+		'<table>' +
+			'<tr>' +
+			  '<th>Periodo</th>' +
+			  '<th>Tipo</th> ' +
+			 '<th>Total</th>' +
+			'</tr>';
+    connection.query(sql, function (err, result)
+    {
+        var periodo =0;
+        var total=25;
+        var x =0;
+        result.forEach(function (element) {
+
+            if(element.tipo==1)
+            {
+                report+= "<tr><td>"+element.periodo+"</td><td>Productos con inventario</td><td>"+element.total+"</td></tr>";
+            }
+            else if(element.tipo==2)
+            {
+                report+= "<tr><td>"+element.periodo+"</td><td>Productos sin inventario</td><td>"+element.total+"</td></tr>";
+            }
+            /*else if(element.tipo==3)
+            {
+                report+= "durante el periodo "+element.periodo+" se consulto "+element.total+" veces obtener inventario\n";
+            }
+            else if(element.tipo==4)
+            {
+                report+= "durante el periodo "+element.periodo+" se despachó "+element.total+" veces correctamente\n";
+            }
+            else
+            {
+                report+= "durante el periodo "+element.periodo+" se no se pudo despachar "+element.total+" veces\n";
+            }*/
+            x++;
+            if(x==result.length)
+            {
+				report += "</table></body></html>";
+                res.send(report);
+            }
+        });
+    });
+
+
+});

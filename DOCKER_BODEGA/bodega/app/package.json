@@ -1,0 +1,20 @@
+{
+  "name": "bodega",
+  "version": "1.0.0",
+  "description": "Bodega de Productos",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "nodemon index.js"
+  },
+  "author": "",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "body-parser": "^1.19.0",
+    "config": "^3.1.0",
+    "express": "^4.16.4",
+    "mysql": "^2.17.1",
+    "nodemon": "^1.19.0",
+    "request": "^2.88.0"
+  }
+}
