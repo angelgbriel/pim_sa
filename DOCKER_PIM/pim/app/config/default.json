@@ -1,0 +1,12 @@
+{
+  "categorias":[
+    {
+      "nombre": "VideoJuegos",
+      "subcategorias":[
+        "Deportivo",
+        "Arcade",
+        "Accion"
+      ]
+    }
+  ]
+}

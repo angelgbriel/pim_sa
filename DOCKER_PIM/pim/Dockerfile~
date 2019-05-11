@@ -1,0 +1,9 @@
+FROM angelgbriel/nod_my:v1
+WORKDIR /home
+RUN mkdir app 
+COPY ./app/bd/pim.sql ./app
+COPY ./app/package.json ./app
+EXPOSE 8080
+RUN service mysql start
+RUN cd app && mysql -u root < pim.sql
+RUN cd app && npm install && ls && npm start
